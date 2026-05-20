@@ -362,12 +362,14 @@ function BuffBuddy.Core:GetPendingActions()
                             local targetLvl = (lvl and lvl > 0) and lvl or 60
                             local usableId = self:GetBestKnownSpellId(buffDef, targetLvl, true)
                             local unitHas, unitRemaining, unitActiveId, unitDuration = self:UnitHasBuff(unit, buffDef)
+                            local sameClass = (unitClass[unit] == BuffBuddy.playerClass)
                             local willCast =
                                 usableId
                                 and (NeedsBuff(unitHas, unitRemaining, unitDuration, buffDef)
                                     or HasHigherRank(buffDef, playerBestId, unitActiveId))
                                 and BuffAppliesToClass(buffDef, unitClass[unit])
                                 and (not buffDef.priority or PlayerKnowsBuff(buffDef))
+                                and (not sameClass or (playerLevel - targetLvl) > 10)
                             if BuffBuddy.debugSmart then
                                 local why
                                 if not usableId then
@@ -379,6 +381,8 @@ function BuffBuddy.Core:GetPendingActions()
                                     why = "class-filter"
                                 elseif buffDef.priority and not PlayerKnowsBuff(buffDef) then
                                     why = "unknown-spell"
+                                elseif sameClass and (playerLevel - targetLvl) <= 10 then
+                                    why = "same-class-no-upgrade"
                                 else
                                     why = "|cff00ff00ADDED|r"
                                 end
@@ -458,11 +462,13 @@ function BuffBuddy.Core:GetPendingActions()
                         local targetLvl = (lvl and lvl > 0) and lvl or 60
                         local usableId = self:GetBestKnownSpellId(buffDef, targetLvl, true)
                         local unitHas, unitRemaining, unitActiveId, unitDuration = self:UnitHasBuff(unit, buffDef)
+                        local sameClass = (strangerClass == BuffBuddy.playerClass)
                         if usableId
                         and (NeedsBuff(unitHas, unitRemaining, unitDuration, buffDef)
                             or HasHigherRank(buffDef, playerBestId, unitActiveId))
                         and BuffAppliesToClass(buffDef, strangerClass or "")
-                        and (not buffDef.priority or PlayerKnowsBuff(buffDef)) then
+                        and (not buffDef.priority or PlayerKnowsBuff(buffDef))
+                        and (not sameClass or (playerLevel - targetLvl) > 10) then
                             table.insert(actions, {
                                 type             = "cast",
                                 buffDef          = buffDef,
