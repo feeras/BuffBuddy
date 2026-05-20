@@ -2,8 +2,12 @@ BuffBuddy = BuffBuddy or {}
 BuffBuddy.Core = {}
 
 -- [playerName .. tostring(spellId)] = GetTime() of last whisper
-local requestCooldowns = {}
-local REQUEST_COOLDOWN = 60
+local requestCooldowns  = {}
+local REQUEST_COOLDOWN  = 60
+
+-- Keeps request entries visible for this many seconds after the source leaves scan range.
+local requestCache      = {}
+local REQUEST_CACHE_TTL = 10
 
 local coreFrame = CreateFrame("Frame")
 coreFrame:RegisterEvent("PLAYER_LOGIN")
@@ -12,6 +16,8 @@ coreFrame:RegisterEvent("UNIT_AURA")
 coreFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 coreFrame:RegisterEvent("NAME_PLATE_UNIT_ADDED")
 coreFrame:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
+coreFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+coreFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 
 coreFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
@@ -62,29 +68,33 @@ function BuffBuddy.Core:GetGroupUnits()
     return units
 end
 
--- Returns non-group friendly player unit IDs visible on nearby nameplates.
--- Requires friendly nameplates to be enabled in the WoW interface options.
+-- Returns non-group friendly player unit IDs that are nearby (target, mouseover, nameplates).
 function BuffBuddy.Core:GetNearbyUnits(groupUnits)
     local nearby = {}
-    if not (C_NamePlate and C_NamePlate.GetNamePlates) then
-        return nearby
+
+    local function AddIfNew(unit)
+        if not (unit and UnitExists(unit) and UnitIsPlayer(unit)
+                and UnitIsFriend("player", unit)) then return end
+        for _, g in ipairs(groupUnits) do
+            if UnitIsUnit(unit, g) then return end
+        end
+        for _, n in ipairs(nearby) do
+            if UnitIsUnit(unit, n) then return end
+        end
+        table.insert(nearby, unit)
     end
-    for _, np in ipairs(C_NamePlate.GetNamePlates()) do
-        local unit = np.namePlateUnitToken
-        if unit and UnitExists(unit) and UnitIsPlayer(unit)
-        and UnitIsFriend("player", unit) then
-            local dup = false
-            for _, g in ipairs(groupUnits) do
-                if UnitIsUnit(unit, g) then dup = true; break end
-            end
-            if not dup then
-                for _, n in ipairs(nearby) do
-                    if UnitIsUnit(unit, n) then dup = true; break end
-                end
-            end
-            if not dup then table.insert(nearby, unit) end
+
+    -- Current target and mouseover are the most reliable "standing in front of you" signals.
+    AddIfNew("target")
+    AddIfNew("mouseover")
+
+    -- Also sweep visible friendly nameplates (requires friendly nameplates enabled).
+    if C_NamePlate and C_NamePlate.GetNamePlates then
+        for _, np in ipairs(C_NamePlate.GetNamePlates()) do
+            AddIfNew(np.namePlateUnitToken)
         end
     end
+
     return nearby
 end
 
@@ -144,6 +154,29 @@ local function HasHigherRank(buffDef, playerBestId, unitActiveId)
     return false
 end
 
+-- Returns true when a provider at providerLevel could cast a higher rank of buffDef
+-- than the activeId the player currently has on them.
+-- ranks[] is ordered highest-to-lowest; a lower index = higher rank.
+local function ProviderCanUpgrade(buffDef, activeId, providerLevel)
+    if not (buffDef.ranks and buffDef.rankLevels and activeId and providerLevel and providerLevel > 0) then
+        return false
+    end
+    local providerBestIdx = nil
+    for i = 1, #buffDef.ranks do
+        if (buffDef.rankLevels[i] or 1) <= providerLevel then
+            providerBestIdx = i
+            break
+        end
+    end
+    if not providerBestIdx then return false end
+    for i = 1, #buffDef.ranks do
+        if buffDef.ranks[i] == activeId then
+            return providerBestIdx < i  -- provider's best rank has a lower (= higher) index
+        end
+    end
+    return false
+end
+
 -- Returns true when buffDef is relevant for the given class token.
 -- Buffs without targetClasses apply to every class.
 local function BuffAppliesToClass(buffDef, classToken)
@@ -198,12 +231,38 @@ local function DeduplicatePriorityBuffs(actions)
     return normal
 end
 
--- Returns the highest rank of buffDef that the local player knows, or buffDef.spellId as fallback.
-function BuffBuddy.Core:GetBestKnownSpellId(buffDef)
+-- Returns the highest rank of buffDef that the local player knows and can cast on targetLevel.
+-- In WoW Classic a spell of rank level R cannot be cast on a target below level (R - 10).
+-- If targetLevel is nil, skips the level check and returns the highest known rank.
+-- strict=true: returns nil when no rank fits targetLevel (use for suggestion gating).
+-- strict=false/nil: falls back to the lowest known rank so the button always does something.
+function BuffBuddy.Core:GetBestKnownSpellId(buffDef, targetLevel, strict)
     if buffDef.ranks and IsSpellKnown then
-        for _, id in ipairs(buffDef.ranks) do
-            if IsSpellKnown(id) then return id end
+        local lowestKnown = nil
+        for i, id in ipairs(buffDef.ranks) do
+            local known = IsSpellKnown(id)
+            if BuffBuddy.debugCast then
+                local rl   = buffDef.rankLevels and buffDef.rankLevels[i] or "?"
+                local minT = buffDef.rankLevels and math.max(1, (buffDef.rankLevels[i] or 1) - 10) or "?"
+                print(string.format("|cffffcc00BB debug|r  rank[%d] id=%d known=%s rankLvl=%s minTarget=%s targetLevel=%s",
+                    i, id, tostring(known), tostring(rl), tostring(minT), tostring(targetLevel)))
+            end
+            if known then
+                lowestKnown = id  -- track as we descend; ends up being the lowest known rank
+                if not targetLevel or not buffDef.rankLevels then
+                    return id  -- no level restriction: return highest known immediately
+                end
+                local minTarget = math.max(1, (buffDef.rankLevels[i] or 1) - 10)
+                if targetLevel >= minTarget then return id end
+            end
         end
+        if lowestKnown and not strict then
+            if BuffBuddy.debugCast then
+                print(string.format("|cffffcc00BB debug|r  fallback to lowestKnown=%d", lowestKnown))
+            end
+            return lowestKnown
+        end
+        return nil
     end
     return buffDef.spellId
 end
@@ -237,6 +296,17 @@ function BuffBuddy.Core:GetPendingActions()
     local requestedBuffs = {}   -- tracks spellIds already covered by a "request" entry
     local units          = self:GetGroupUnits()
 
+    local playerLevel    = UnitLevel("player") or 0
+
+    if BuffBuddy.debugSmart then
+        local names = {}
+        for _, u in ipairs(units) do names[#names+1] = (UnitName(u) or u) end
+        print(string.format("|cff00ccffBBsmart|r scan: group=[%s] playerClass=%s",
+            table.concat(names, ","), BuffBuddy.playerClass or "?"))
+    end
+    local minLevelDiff   = (BuffBuddyDB and BuffBuddyDB.minLevelDiff ~= nil)
+                           and BuffBuddyDB.minLevelDiff or 10
+
     -- Pre-cache each unit's class so we don't call UnitClass repeatedly.
     local unitClass = {}
     for _, unit in ipairs(units) do
@@ -249,24 +319,33 @@ function BuffBuddy.Core:GetPendingActions()
         if self:IsBuffEnabled(buffDef.spellId) then
 
             -- 1. Does the local player need this buff?
-            local playerHas, playerRemaining, _, playerDuration = self:UnitHasBuff("player", buffDef)
-            if NeedsBuff(playerHas, playerRemaining, playerDuration, buffDef)
-            and BuffAppliesToClass(buffDef, BuffBuddy.playerClass) then
+            local playerHas, playerRemaining, playerActiveId, playerDuration = self:UnitHasBuff("player", buffDef)
+            if BuffAppliesToClass(buffDef, BuffBuddy.playerClass) then
                 -- Find the first available group member who can provide it.
                 for _, unit in ipairs(units) do
+                    local provLvl = UnitLevel(unit)
+                    local tooLow  = provLvl and provLvl > 0 and playerLevel > 0
+                                    and (playerLevel - provLvl) > minLevelDiff
                     if unit ~= "player"
                     and UnitIsAvailable(unit)
-                    and unitClass[unit] == buffDef.class then
-                        local targetName = UnitName(unit)  -- may be "Name-Realm" cross-realm
-                        if not self:IsRequestOnCooldown(targetName, buffDef.spellId) then
-                            table.insert(actions, {
-                                type             = "request",
-                                buffDef          = buffDef,
-                                targetUnit       = unit,
-                                targetName       = targetName,
-                                remainingDuration = playerRemaining,
-                            })
-                            requestedBuffs[buffDef.spellId] = true
+                    and unitClass[unit] == buffDef.class
+                    and not tooLow then
+                        local wantBuff = NeedsBuff(playerHas, playerRemaining, playerDuration, buffDef)
+                                      or ProviderCanUpgrade(buffDef, playerActiveId, provLvl)
+                        if wantBuff then
+                            local targetName = UnitName(unit)  -- may be "Name-Realm" cross-realm
+                            if not self:IsRequestOnCooldown(targetName, buffDef.spellId) then
+                                table.insert(actions, {
+                                    type             = "request",
+                                    buffDef          = buffDef,
+                                    targetUnit       = unit,
+                                    targetName       = targetName,
+                                    targetClass      = unitClass[unit],
+                                    remainingDuration = playerRemaining,
+                                    targetLevel      = provLvl,
+                                })
+                                requestedBuffs[buffDef.spellId] = true
+                            end
                         end
                         break  -- one request entry per buff type
                     end
@@ -275,21 +354,48 @@ function BuffBuddy.Core:GetPendingActions()
 
             -- 2. Can the local player cast this buff for others?
             if BuffBuddy.playerClass == buffDef.class then
-                local playerBestId = self:GetBestKnownSpellId(buffDef)
-                for _, unit in ipairs(units) do
-                    if unit ~= "player" and UnitIsAvailable(unit) then
-                        local unitHas, unitRemaining, unitActiveId, unitDuration = self:UnitHasBuff(unit, buffDef)
-                        if (NeedsBuff(unitHas, unitRemaining, unitDuration, buffDef)
-                            or HasHigherRank(buffDef, playerBestId, unitActiveId))
-                        and BuffAppliesToClass(buffDef, unitClass[unit])
-                        and (not buffDef.priority or PlayerKnowsBuff(buffDef)) then
-                            table.insert(actions, {
-                                type             = "cast",
-                                buffDef          = buffDef,
-                                targetUnit       = unit,
-                                targetName       = UnitName(unit),
-                                remainingDuration = unitRemaining,
-                            })
+                local playerBestId = self:GetBestKnownSpellId(buffDef)  -- any rank: "do I know this spell?"
+                if playerBestId then
+                    for _, unit in ipairs(units) do
+                        if unit ~= "player" and UnitIsAvailable(unit) then
+                            local lvl = UnitLevel(unit)
+                            local targetLvl = (lvl and lvl > 0) and lvl or 60
+                            local usableId = self:GetBestKnownSpellId(buffDef, targetLvl, true)
+                            local unitHas, unitRemaining, unitActiveId, unitDuration = self:UnitHasBuff(unit, buffDef)
+                            local willCast =
+                                usableId
+                                and (NeedsBuff(unitHas, unitRemaining, unitDuration, buffDef)
+                                    or HasHigherRank(buffDef, playerBestId, unitActiveId))
+                                and BuffAppliesToClass(buffDef, unitClass[unit])
+                                and (not buffDef.priority or PlayerKnowsBuff(buffDef))
+                            if BuffBuddy.debugSmart then
+                                local why
+                                if not usableId then
+                                    why = "no-rank(tgt=" .. targetLvl .. ")"
+                                elseif not (NeedsBuff(unitHas, unitRemaining, unitDuration, buffDef)
+                                        or HasHigherRank(buffDef, playerBestId, unitActiveId)) then
+                                    why = "has-buff(" .. math.floor(unitRemaining) .. "s)"
+                                elseif not BuffAppliesToClass(buffDef, unitClass[unit]) then
+                                    why = "class-filter"
+                                elseif buffDef.priority and not PlayerKnowsBuff(buffDef) then
+                                    why = "unknown-spell"
+                                else
+                                    why = "|cff00ff00ADDED|r"
+                                end
+                                print(string.format("|cff00ccffBBcast|r %s(%s) + %-24s → %s",
+                                    UnitName(unit) or unit, unitClass[unit] or "?", buffDef.label, why))
+                            end
+                            if willCast then
+                                table.insert(actions, {
+                                    type             = "cast",
+                                    buffDef          = buffDef,
+                                    targetUnit       = unit,
+                                    targetName       = UnitName(unit),
+                                    targetClass      = unitClass[unit],
+                                    remainingDuration = unitRemaining,
+                                    targetLevel      = targetLvl,
+                                })
+                            end
                         end
                     end
                 end
@@ -300,6 +406,17 @@ function BuffBuddy.Core:GetPendingActions()
 
     -- Also scan any non-group players currently targeted or moused over.
     local nearbyUnits = self:GetNearbyUnits(units)
+    if BuffBuddy.debugSmart then
+        if #nearbyUnits > 0 then
+            local names = {}
+            for _, u in ipairs(nearbyUnits) do
+                names[#names+1] = (UnitName(u) or u) .. "(" .. u .. ")"
+            end
+            print("|cff00ccffBBsmart|r nearby: " .. table.concat(names, ", "))
+        else
+            print("|cff00ccffBBsmart|r nearby: none")
+        end
+    end
     for _, unit in ipairs(nearbyUnits) do
         local _, strangerClass = UnitClass(unit)
         local strangerName = UnitName(unit)
@@ -308,10 +425,16 @@ function BuffBuddy.Core:GetPendingActions()
             if self:IsBuffEnabled(buffDef.spellId) then
 
                 -- Can this stranger provide a buff I need?
+                local sLvl    = UnitLevel(unit)
+                local sTooLow = sLvl and sLvl > 0 and playerLevel > 0
+                                and (playerLevel - sLvl) > minLevelDiff
                 if strangerClass == buffDef.class
-                and not requestedBuffs[buffDef.spellId] then
-                    local playerHas, playerRemaining, _, playerDuration = self:UnitHasBuff("player", buffDef)
-                    if NeedsBuff(playerHas, playerRemaining, playerDuration, buffDef)
+                and not requestedBuffs[buffDef.spellId]
+                and not sTooLow then
+                    local playerHas, playerRemaining, playerActiveId, playerDuration = self:UnitHasBuff("player", buffDef)
+                    local wantBuff = NeedsBuff(playerHas, playerRemaining, playerDuration, buffDef)
+                                  or ProviderCanUpgrade(buffDef, playerActiveId, sLvl)
+                    if wantBuff
                     and BuffAppliesToClass(buffDef, BuffBuddy.playerClass)
                     and not self:IsRequestOnCooldown(strangerName, buffDef.spellId) then
                         table.insert(actions, {
@@ -319,7 +442,9 @@ function BuffBuddy.Core:GetPendingActions()
                             buffDef          = buffDef,
                             targetUnit       = unit,
                             targetName       = strangerName,
+                            targetClass      = strangerClass,
                             remainingDuration = playerRemaining,
+                            targetLevel      = (sLvl and sLvl > 0) and sLvl or nil,
                         })
                         requestedBuffs[buffDef.spellId] = true
                     end
@@ -327,22 +452,56 @@ function BuffBuddy.Core:GetPendingActions()
 
                 -- Can I provide a buff this stranger needs?
                 if BuffBuddy.playerClass == buffDef.class then
-                    local playerBestId = self:GetBestKnownSpellId(buffDef)
-                    local unitHas, unitRemaining, unitActiveId, unitDuration = self:UnitHasBuff(unit, buffDef)
-                    if (NeedsBuff(unitHas, unitRemaining, unitDuration, buffDef)
-                        or HasHigherRank(buffDef, playerBestId, unitActiveId))
-                    and BuffAppliesToClass(buffDef, strangerClass or "")
-                    and (not buffDef.priority or PlayerKnowsBuff(buffDef)) then
-                        table.insert(actions, {
-                            type             = "cast",
-                            buffDef          = buffDef,
-                            targetUnit       = unit,
-                            targetName       = strangerName,
-                            remainingDuration = unitRemaining,
-                        })
+                    local playerBestId = self:GetBestKnownSpellId(buffDef)  -- any rank: "do I know this spell?"
+                    if playerBestId then
+                        local lvl = UnitLevel(unit)
+                        local targetLvl = (lvl and lvl > 0) and lvl or 60
+                        local usableId = self:GetBestKnownSpellId(buffDef, targetLvl, true)
+                        local unitHas, unitRemaining, unitActiveId, unitDuration = self:UnitHasBuff(unit, buffDef)
+                        if usableId
+                        and (NeedsBuff(unitHas, unitRemaining, unitDuration, buffDef)
+                            or HasHigherRank(buffDef, playerBestId, unitActiveId))
+                        and BuffAppliesToClass(buffDef, strangerClass or "")
+                        and (not buffDef.priority or PlayerKnowsBuff(buffDef)) then
+                            table.insert(actions, {
+                                type             = "cast",
+                                buffDef          = buffDef,
+                                targetUnit       = unit,
+                                targetName       = strangerName,
+                                targetClass      = strangerClass,
+                                remainingDuration = unitRemaining,
+                                targetLevel      = targetLvl,
+                            })
+                        end
                     end
                 end
 
+            end
+        end
+    end
+
+    -- Update the request cache with fresh entries; keep stale ones alive for REQUEST_CACHE_TTL.
+    local now         = GetTime()
+    local freshKeys   = {}
+    local freshSpells = {}
+    for _, a in ipairs(actions) do
+        if a.type == "request" then
+            local key = (a.targetName or "") .. "|" .. tostring(a.buffDef.spellId)
+            freshKeys[key]                 = true
+            freshSpells[a.buffDef.spellId] = true
+            requestCache[key] = { action = a, expiresAt = now + REQUEST_CACHE_TTL }
+        end
+    end
+    for key, entry in pairs(requestCache) do
+        if entry.expiresAt < now then
+            requestCache[key] = nil
+        elseif not freshKeys[key] and not freshSpells[entry.action.buffDef.spellId] then
+            local a = entry.action
+            if self:IsRequestOnCooldown(a.targetName, a.buffDef.spellId) then
+                requestCache[key] = nil
+            else
+                table.insert(actions, a)
+                freshSpells[a.buffDef.spellId] = true
             end
         end
     end

@@ -15,6 +15,12 @@ local BOTTOM_PAD    = 6
 local MAX_BUTTONS    = 5
 local MAX_LIST_ITEMS = 10
 
+local function ClassColoredName(name, classToken)
+    local c = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
+    if not c then return name or "Unknown" end
+    return string.format("|cff%02x%02x%02x%s|r", c.r * 255, c.g * 255, c.b * 255, name or "Unknown")
+end
+
 local mainFrame
 local buttonPool         = {}
 local moreLabel
@@ -133,8 +139,7 @@ end
 -- ── Smart-buff row (full-width, inside the frame) ─────────────────────────────
 
 local function CreateSmartBuffButton()
-    local btn = CreateFrame("Button", "BuffBuddySmartBuff", mainFrame,
-                            "SecureActionButtonTemplate")
+    local btn = CreateFrame("Button", "BuffBuddySmartBuff", mainFrame, "SecureActionButtonTemplate")
     btn:SetHeight(SMART_HEIGHT)
     btn:SetAttribute("type", "empty")
 
@@ -199,6 +204,7 @@ local function CreateSmartBuffButton()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    -- Right-click toggles dropdown; left-click is handled by SecureActionButtonTemplate
     btn:SetScript("OnMouseDown", function(self, button)
         if button == "RightButton" then
             BuffBuddy.UI:ToggleSmartBuffList()
@@ -211,11 +217,9 @@ end
 -- ── Dropdown list ─────────────────────────────────────────────────────────────
 
 local function CreateListItem(index)
-    local item = CreateFrame("Button", "BuffBuddyListItem" .. index, smartBuffList,
-                             "SecureActionButtonTemplate")
+    local item = CreateFrame("Button", "BuffBuddyListItem" .. index, smartBuffList, "SecureActionButtonTemplate")
     item:SetHeight(26)
-    item:SetAttribute("type",  "empty")
-    item:SetAttribute("type2", "empty")
+    item:SetAttribute("type", "empty")
 
     item:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
 
@@ -268,6 +272,14 @@ local function CreateSmartBuffList()
     return list
 end
 
+-- ── Cast macro builder ───────────────────────────────────────────────────────
+
+-- Targets the player by name then casts the spell.  Avoids macro conditionals
+-- (e.g. [@party1]) which are not supported in all WoW Classic builds.
+local function BuildCastMacro(spellName, targetName)
+    return string.format("/target %s\n/cast %s", targetName or "", spellName)
+end
+
 -- ── Click handlers ────────────────────────────────────────────────────────────
 
 function BuffBuddy.UI:HandleRequest(actionData)
@@ -277,8 +289,7 @@ function BuffBuddy.UI:HandleRequest(actionData)
     local template = (BuffBuddyDB and BuffBuddyDB.whisperText)
         or "[BuffBuddy] Could you please buff me with %s?"
 
-    local spellName = GetSpellInfo(spellId) or actionData.buffDef.label
-    local link = "[" .. spellName .. "]"
+    local link = "[" .. actionData.buffDef.label .. "]"
 
     local msg = string.format(template, link)
     SendChatMessage(msg, "WHISPER", nil, targetName)
@@ -287,14 +298,7 @@ function BuffBuddy.UI:HandleRequest(actionData)
     self:Update()
 end
 
-local function BuildCastMacro(action, spellName)
-    local u = action.targetUnit or ""
-    if u:match("^party") or u:match("^raid") then
-        return string.format("/cast [@%s,help,nodead] %s", u, spellName)
-    else
-        return string.format("/target %s\n/cast %s", action.targetName or "", spellName)
-    end
-end
+
 
 function BuffBuddy.UI:ToggleSmartBuffList()
     if not smartBuffList then return end
@@ -349,7 +353,9 @@ function BuffBuddy.UI:Update()
 
             local tex = GetSpellTexture(action.buffDef.spellId)
             btn.icon:SetTexture(tex or "Interface\\Icons\\INV_Misc_QuestionMark")
-            btn.label:SetText(action.targetName or "Unknown")
+            local lvlTag = (action.targetLevel and action.targetLevel > 0)
+                and ("|cffaaaaaa[" .. action.targetLevel .. "]|r ") or ""
+            btn.label:SetText(lvlTag .. ClassColoredName(action.targetName, action.targetClass))
             btn.actionData = action
 
             if not InCombatLockdown() then
@@ -389,18 +395,22 @@ function BuffBuddy.UI:Update()
     if topAction then
         smartBuffButton.icon:SetTexture(
             GetSpellTexture(topAction.buffDef.spellId) or "Interface\\Icons\\INV_Misc_QuestionMark")
-        smartBuffButton.nameLabel:SetText(topAction.targetName or "")
+        local lvlTag = (topAction.targetLevel and topAction.targetLevel > 0)
+            and ("|cffaaaaaa[" .. topAction.targetLevel .. "]|r ") or ""
+        smartBuffButton.nameLabel:SetText(lvlTag .. ClassColoredName(topAction.targetName, topAction.targetClass))
         smartBuffButton.nameLabel:Show()
         smartBuffButton.emptyLabel:Hide()
         smartBuffButton.bg:SetColorTexture(0, 0.5, 0.12, 0.13)
         smartBuffButton.strip:SetColorTexture(0.15, 1, 0.3, 1)
         smartBuffButton.dim:Hide()
         if not InCombatLockdown() then
-            local bestId = BuffBuddy.Core:GetBestKnownSpellId(topAction.buffDef)
-            local sn = GetSpellInfo(bestId)
+            local lvl = UnitLevel(topAction.targetUnit)
+            local targetLvl = (lvl and lvl > 0) and lvl or 60
+            local bestId = BuffBuddy.Core:GetBestKnownSpellId(topAction.buffDef, targetLvl)
+            local sn = bestId and GetSpellInfo(bestId)
             if sn then
                 smartBuffButton:SetAttribute("type",      "macro")
-                smartBuffButton:SetAttribute("macrotext", BuildCastMacro(topAction, sn))
+                smartBuffButton:SetAttribute("macrotext", BuildCastMacro(sn, topAction.targetName))
             else
                 smartBuffButton:SetAttribute("type",      "empty")
                 smartBuffButton:SetAttribute("macrotext", "")
@@ -420,44 +430,48 @@ function BuffBuddy.UI:Update()
     end
 
     -- ── Dropdown list items ───────────────────────────────────────────────────
-    if not InCombatLockdown() then
-        local listHeight = 8
-        for i = 1, MAX_LIST_ITEMS do
-            if not smartBuffListItems[i] then
-                smartBuffListItems[i] = CreateListItem(i)
-            end
-            local item   = smartBuffListItems[i]
-            local action = castActions[i]
-            if action then
-                local bestId = BuffBuddy.Core:GetBestKnownSpellId(action.buffDef)
-                local sn = GetSpellInfo(bestId)
+    local listHeight = 8
+    for i = 1, MAX_LIST_ITEMS do
+        if not smartBuffListItems[i] then
+            smartBuffListItems[i] = CreateListItem(i)
+        end
+        local item   = smartBuffListItems[i]
+        local action = castActions[i]
+        if action then
+            item.action = action
+            item.icon:SetTexture(
+                GetSpellTexture(action.buffDef.spellId) or "Interface\\Icons\\INV_Misc_QuestionMark")
+            local lvlTag = (action.targetLevel and action.targetLevel > 0)
+                and ("|cffaaaaaa[" .. action.targetLevel .. "]|r ") or ""
+            item.label:SetText(lvlTag .. ClassColoredName(action.targetName, action.targetClass))
+            item:ClearAllPoints()
+            item:SetWidth(smartBuffList:GetWidth() - 8)
+            item:SetPoint("TOPLEFT", smartBuffList, "TOPLEFT", 4, -(4 + (i - 1) * 26))
+            if not InCombatLockdown() then
+                local lvl = UnitLevel(action.targetUnit)
+                local targetLvl = (lvl and lvl > 0) and lvl or 60
+                local bestId = BuffBuddy.Core:GetBestKnownSpellId(action.buffDef, targetLvl)
+                local sn = bestId and GetSpellInfo(bestId)
                 if sn then
                     item:SetAttribute("type",      "macro")
-                    item:SetAttribute("macrotext", BuildCastMacro(action, sn))
+                    item:SetAttribute("macrotext", BuildCastMacro(sn, action.targetName))
                 else
                     item:SetAttribute("type",      "empty")
                     item:SetAttribute("macrotext", "")
                 end
-                item.action = action
-                item.icon:SetTexture(
-                    GetSpellTexture(action.buffDef.spellId) or "Interface\\Icons\\INV_Misc_QuestionMark")
-                item.label:SetText(action.targetName or "Unknown")
-                item:ClearAllPoints()
-                item:SetWidth(smartBuffList:GetWidth() - 8)
-                item:SetPoint("TOPLEFT", smartBuffList, "TOPLEFT", 4, -(4 + (i - 1) * 26))
-                item:Show()
-                listHeight = listHeight + 26
-            else
-                item.action = nil
-                item:Hide()
             end
+            item:Show()
+            listHeight = listHeight + 26
+        else
+            item.action = nil
+            item:Hide()
         end
-        if #castActions > 0 then
-            smartBuffList:SetHeight(listHeight)
-        end
-        if smartBuffList:IsShown() and #castActions == 0 then
-            smartBuffList:Hide()
-        end
+    end
+    if #castActions > 0 then
+        smartBuffList:SetHeight(listHeight)
+    end
+    if smartBuffList:IsShown() and #castActions == 0 then
+        smartBuffList:Hide()
     end
 end
 
