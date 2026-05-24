@@ -1,6 +1,6 @@
-BuffBuddy = BuffBuddy or {}
+BuffsPlease = BuffsPlease or {}
 
-BuffBuddyDB_Defaults = {
+BuffsPleaseDB_Defaults = {
     framePos     = { x = 300, y = 0 },
     enabledBuffs = {},   -- [spellId] = false to disable; absent/true means enabled
     whisperText  = "Could you please buff me with %s?",
@@ -29,38 +29,38 @@ local configFrame = CreateFrame("Frame")
 configFrame:RegisterEvent("ADDON_LOADED")
 
 configFrame:SetScript("OnEvent", function(self, event, addonName)
-    if addonName ~= "BuffBuddy" then return end
+    if addonName ~= "BuffsPlease" then return end
     self:UnregisterEvent("ADDON_LOADED")
 
     -- Initialise or upgrade the SavedVariables table
-    if type(BuffBuddyDB) ~= "table" then
-        BuffBuddyDB = {}
+    if type(BuffsPleaseDB) ~= "table" then
+        BuffsPleaseDB = {}
     end
-    ApplyDefaults(BuffBuddyDB, BuffBuddyDB_Defaults)
+    ApplyDefaults(BuffsPleaseDB, BuffsPleaseDB_Defaults)
 
-    -- Strip legacy "[BuffBuddy] " prefix from saved whisper template
-    if BuffBuddyDB.whisperText then
-        BuffBuddyDB.whisperText = BuffBuddyDB.whisperText:gsub("^%[BuffBuddy%]%s*", "")
+    -- Strip legacy "[BuffsPlease] " prefix from saved whisper template
+    if BuffsPleaseDB.whisperText then
+        BuffsPleaseDB.whisperText = BuffsPleaseDB.whisperText:gsub("^%[BuffsPlease%]%s*", "")
     end
 
     -- Build the UI now that we have valid settings
-    if BuffBuddy.UI and BuffBuddy.UI.Initialize then
-        BuffBuddy.UI:Initialize()
+    if BuffsPlease.UI and BuffsPlease.UI.Initialize then
+        BuffsPlease.UI:Initialize()
     end
 
     -- Register the Interface Options panel
-    BuffBuddy.CreateOptionsPanel()
+    BuffsPlease.CreateOptionsPanel()
 end)
 
 -- ── Interface Options panel ───────────────────────────────────────────────────
 
-function BuffBuddy.CreateOptionsPanel()
-    local panel = CreateFrame("Frame", "BuffBuddyOptionsPanel")
-    panel.name = "BuffBuddy"
+function BuffsPlease.CreateOptionsPanel()
+    local panel = CreateFrame("Frame", "BuffsPleaseOptionsPanel")
+    panel.name = "BuffsPlease"
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("|cffffcc00BuffBuddy|r Settings")
+    title:SetText("|cffffcc00BuffsPlease|r Settings")
 
     -- ── Min Level Difference ──────────────────────────────────────────────────
     local sectionLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -74,7 +74,7 @@ function BuffBuddy.CreateOptionsPanel()
     desc:SetText("Don't suggest requesting buffs from players more than this many levels below you. Set to 0 to disable the filter.")
     desc:SetTextColor(0.7, 0.7, 0.7)
 
-    local slider = CreateFrame("Slider", "BuffBuddyMinLevelDiffSlider", panel, "OptionsSliderTemplate")
+    local slider = CreateFrame("Slider", "BuffsPleaseMinLevelDiffSlider", panel, "OptionsSliderTemplate")
     slider:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 2, -20)
     slider:SetWidth(220)
     slider:SetMinMaxValues(0, 60)
@@ -93,17 +93,17 @@ function BuffBuddy.CreateOptionsPanel()
 
     -- Sync slider from saved DB each time the panel is opened
     panel:SetScript("OnShow", function()
-        local v = (BuffBuddyDB and BuffBuddyDB.minLevelDiff ~= nil) and BuffBuddyDB.minLevelDiff or 10
+        local v = (BuffsPleaseDB and BuffsPleaseDB.minLevelDiff ~= nil) and BuffsPleaseDB.minLevelDiff or 10
         slider:SetValue(v)
         valueDisplay:SetText(v)
     end)
 
     -- Called when the user clicks "Okay"
     panel.okay = function()
-        if BuffBuddyDB then
-            BuffBuddyDB.minLevelDiff = math.floor(slider:GetValue())
+        if BuffsPleaseDB then
+            BuffsPleaseDB.minLevelDiff = math.floor(slider:GetValue())
         end
-        if BuffBuddy.Core then BuffBuddy.Core:Refresh() end
+        if BuffsPlease.Core then BuffsPlease.Core:Refresh() end
     end
 
     -- Called when the user clicks "Cancel" – nothing to revert since we only write on okay
@@ -126,64 +126,64 @@ end
 
 -- ── Slash commands ────────────────────────────────────────────────────────────
 
-SLASH_BUFFBUDDY1 = "/buffbuddy"
-SLASH_BUFFBUDDY2 = "/bb"
+SLASH_BUFFSPLEASE1 = "/buffsplease"
+SLASH_BUFFSPLEASE2 = "/bp"
 
-SlashCmdList["BUFFBUDDY"] = function(msg)
+SlashCmdList["BUFFSPLEASE"] = function(msg)
     local cmd = string.lower(string.match(msg, "^%s*(%S*)") or "")
 
     if cmd == "" then
         -- Toggle the main frame
-        if BuffBuddy.UI and BuffBuddy.UI.Toggle then
-            BuffBuddy.UI:Toggle()
+        if BuffsPlease.UI and BuffsPlease.UI.Toggle then
+            BuffsPlease.UI:Toggle()
         end
 
     elseif cmd == "reset" then
-        if BuffBuddy.UI and BuffBuddy.UI.ResetPosition then
-            BuffBuddy.UI:ResetPosition()
-            print("|cffffcc00BuffBuddy:|r Frame position reset.")
+        if BuffsPlease.UI and BuffsPlease.UI.ResetPosition then
+            BuffsPlease.UI:ResetPosition()
+            print("|cffffcc00BuffsPlease:|r Frame position reset.")
         end
 
     elseif cmd == "debugcast" then
-        BuffBuddy.debugCast = not BuffBuddy.debugCast
-        print("|cffffcc00BuffBuddy:|r Cast debug logging " .. (BuffBuddy.debugCast and "|cff00ff00ON|r" or "|cffff4040OFF|r"))
-        if BuffBuddy.debugCast then
+        BuffsPlease.debugCast = not BuffsPlease.debugCast
+        print("|cffffcc00BuffsPlease:|r Cast debug logging " .. (BuffsPlease.debugCast and "|cff00ff00ON|r" or "|cffff4040OFF|r"))
+        if BuffsPlease.debugCast then
             print("  Triggers on next UI refresh. Move your mouse or wait up to 5s.")
         end
 
     elseif cmd == "debugsmart" then
-        BuffBuddy.debugSmart = not BuffBuddy.debugSmart
-        print("|cffffcc00BuffBuddy:|r Smart buff debug " .. (BuffBuddy.debugSmart and "|cff00ff00ON|r" or "|cffff4040OFF|r"))
-        if BuffBuddy.debugSmart then
+        BuffsPlease.debugSmart = not BuffsPlease.debugSmart
+        print("|cffffcc00BuffsPlease:|r Smart buff debug " .. (BuffsPlease.debugSmart and "|cff00ff00ON|r" or "|cffff4040OFF|r"))
+        if BuffsPlease.debugSmart then
             print("  Shows cast scan results on each refresh. Toggle off when done.")
-            BuffBuddy.Core:Refresh()
+            BuffsPlease.Core:Refresh()
         end
 
     elseif cmd == "test" then
         local testSpellId = 21562  -- Power Word: Fortitude (rank 4)
         local link = "[Power Word: Fortitude]"
-        local template = (BuffBuddyDB and BuffBuddyDB.whisperText)
+        local template = (BuffsPleaseDB and BuffsPleaseDB.whisperText)
             or "Could you please buff me with %s?"
         local msg = string.format(template, link)
         local playerName = UnitName("player")
         SendChatMessage(msg, "WHISPER", nil, playerName)
-        print("|cffffcc00BuffBuddy:|r Sent test whisper to yourself: " .. msg)
+        print("|cffffcc00BuffsPlease:|r Sent test whisper to yourself: " .. msg)
 
     elseif cmd == "minleveldiff" then
         local val = tonumber(string.match(msg, "%S+%s+(%S+)"))
         if val then
-            BuffBuddyDB.minLevelDiff = math.max(0, math.floor(val))
-            print(string.format("|cffffcc00BuffBuddy:|r Min level diff set to %d. Players more than %d levels below you won't be suggested for buff requests.",
-                BuffBuddyDB.minLevelDiff, BuffBuddyDB.minLevelDiff))
-            if BuffBuddy.Core then BuffBuddy.Core:Refresh() end
+            BuffsPleaseDB.minLevelDiff = math.max(0, math.floor(val))
+            print(string.format("|cffffcc00BuffsPlease:|r Min level diff set to %d. Players more than %d levels below you won't be suggested for buff requests.",
+                BuffsPleaseDB.minLevelDiff, BuffsPleaseDB.minLevelDiff))
+            if BuffsPlease.Core then BuffsPlease.Core:Refresh() end
         else
-            print(string.format("|cffffcc00BuffBuddy:|r Current minLevelDiff = %d. Usage: |cffffff00/bb minleveldiff <number>|r",
-                (BuffBuddyDB and BuffBuddyDB.minLevelDiff) or 10))
+            print(string.format("|cffffcc00BuffsPlease:|r Current minLevelDiff = %d. Usage: |cffffff00/bb minleveldiff <number>|r",
+                (BuffsPleaseDB and BuffsPleaseDB.minLevelDiff) or 10))
         end
 
     elseif cmd == "debug" then
-        print("|cffffcc00BuffBuddy Debug:|r Scanning group buff status...")
-        local units = BuffBuddy.Core:GetGroupUnits()
+        print("|cffffcc00BuffsPlease Debug:|r Scanning group buff status...")
+        local units = BuffsPlease.Core:GetGroupUnits()
         if #units == 1 then
             print("  Not in a group (showing local player only).")
         end
@@ -194,8 +194,8 @@ SlashCmdList["BUFFBUDDY"] = function(msg)
                 print(string.format("|cffa0a0ff%s|r [%s]", name, classFile or "?"))
                 local lvl = UnitLevel(unit)
                 local targetLvl = (lvl and lvl > 0) and lvl or 60
-                for _, buffDef in ipairs(BuffBuddy.BUFF_DEFINITIONS) do
-                    local hasBuff, remaining = BuffBuddy.Core:UnitHasBuff(unit, buffDef)
+                for _, buffDef in ipairs(BuffsPlease.BUFF_DEFINITIONS) do
+                    local hasBuff, remaining = BuffsPlease.Core:UnitHasBuff(unit, buffDef)
                     local status
                     if hasBuff then
                         if buffDef.maxDuration == 0 then
@@ -208,8 +208,8 @@ SlashCmdList["BUFFBUDDY"] = function(msg)
                     end
                     -- Show which rank would be cast on this target
                     local rankNote = ""
-                    if BuffBuddy.playerClass == buffDef.class then
-                        local bestId = BuffBuddy.Core:GetBestKnownSpellId(buffDef, targetLvl)
+                    if BuffsPlease.playerClass == buffDef.class then
+                        local bestId = BuffsPlease.Core:GetBestKnownSpellId(buffDef, targetLvl)
                         if bestId then
                             local _, rankStr = GetSpellInfo(bestId)
                             rankNote = " → " .. (rankStr or "?")
@@ -223,13 +223,13 @@ SlashCmdList["BUFFBUDDY"] = function(msg)
         end
 
     else
-        print("|cffffcc00BuffBuddy|r commands:")
-        print("  |cffffff00/buffbuddy|r (or |cffffff00/bb|r) — toggle window")
-        print("  |cffffff00/buffbuddy reset|r              — reset frame position")
-        print("  |cffffff00/buffbuddy minleveldiff <n>|r  — min level gap for buff requests (default 10)")
-        print("  |cffffff00/buffbuddy debugcast|r           — toggle verbose rank-selection logging")
-        print("  |cffffff00/buffbuddy debugsmart|r         — toggle smart buff scan debug output")
-        print("  |cffffff00/buffbuddy test|r               — whisper yourself to verify spell link format")
-        print("  |cffffff00/buffbuddy debug|r              — print group buff status")
+        print("|cffffcc00BuffsPlease|r commands:")
+        print("  |cffffff00/buffsplease|r (or |cffffff00/bp|r) — toggle window")
+        print("  |cffffff00/buffsplease reset|r              — reset frame position")
+        print("  |cffffff00/buffsplease minleveldiff <n>|r  — min level gap for buff requests (default 10)")
+        print("  |cffffff00/buffsplease debugcast|r           — toggle verbose rank-selection logging")
+        print("  |cffffff00/buffsplease debugsmart|r         — toggle smart buff scan debug output")
+        print("  |cffffff00/buffsplease test|r               — whisper yourself to verify spell link format")
+        print("  |cffffff00/buffsplease debug|r              — print group buff status")
     end
 end

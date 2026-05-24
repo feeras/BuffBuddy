@@ -1,5 +1,5 @@
-BuffBuddy = BuffBuddy or {}
-BuffBuddy.UI = {}
+BuffsPlease = BuffsPlease or {}
+BuffsPlease.UI = {}
 
 -- ── Layout constants ──────────────────────────────────────────────────────────
 local FRAME_WIDTH   = 220
@@ -27,11 +27,12 @@ local moreLabel
 local smartBuffButton
 local smartBuffList
 local smartBuffListItems = {}
+local miniButton
 
 -- ── Main frame ────────────────────────────────────────────────────────────────
 
 local function CreateMainFrame()
-    local f = CreateFrame("Frame", "BuffBuddyFrame", UIParent, "BackdropTemplate")
+    local f = CreateFrame("Frame", "BuffsPleaseFrame", UIParent, "BackdropTemplate")
     f:SetWidth(FRAME_WIDTH)
     f:SetHeight(TITLE_AREA + SMART_HEIGHT + BOTTOM_PAD)
     f:SetFrameStrata("MEDIUM")
@@ -54,14 +55,14 @@ local function CreateMainFrame()
         local uiScale = UIParent:GetEffectiveScale()
         x = x * uiScale - GetScreenWidth()  * uiScale / 2
         y = y * uiScale - GetScreenHeight() * uiScale / 2
-        if BuffBuddyDB then
-            BuffBuddyDB.framePos = { x = x, y = y }
+        if BuffsPleaseDB then
+            BuffsPleaseDB.framePos = { x = x, y = y }
         end
     end)
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     title:SetPoint("TOP", f, "TOP", 0, -5)
-    title:SetText("|cffffcc00BuffBuddy|r")
+    title:SetText("|cffffcc00BuffsPlease|r")
     f.titleText = title
 
     -- Horizontal rule shown only when request rows are present
@@ -79,7 +80,7 @@ end
 -- ── Request-row button pool ───────────────────────────────────────────────────
 
 local function CreatePoolButton(index)
-    local btn = CreateFrame("Button", "BuffBuddyButton" .. index, mainFrame,
+    local btn = CreateFrame("Button", "BuffsPleaseButton" .. index, mainFrame,
                             "SecureActionButtonTemplate")
     btn:SetWidth(FRAME_WIDTH - PADDING * 2)
     btn:SetHeight(ROW_HEIGHT)
@@ -128,7 +129,7 @@ local function CreatePoolButton(index)
 
     btn:SetScript("OnClick", function(self)
         if self.actionData and self.actionData.type == "request" then
-            BuffBuddy.UI:HandleRequest(self.actionData)
+            BuffsPlease.UI:HandleRequest(self.actionData)
         end
     end)
 
@@ -139,7 +140,7 @@ end
 -- ── Smart-buff row (full-width, inside the frame) ─────────────────────────────
 
 local function CreateSmartBuffButton()
-    local btn = CreateFrame("Button", "BuffBuddySmartBuff", mainFrame, "SecureActionButtonTemplate")
+    local btn = CreateFrame("Button", "BuffsPleaseSmartBuff", mainFrame, "SecureActionButtonTemplate")
     btn:SetHeight(SMART_HEIGHT)
     btn:SetAttribute("type", "empty")
 
@@ -207,7 +208,7 @@ local function CreateSmartBuffButton()
     -- Right-click toggles dropdown; left-click is handled by SecureActionButtonTemplate
     btn:SetScript("OnMouseDown", function(self, button)
         if button == "RightButton" then
-            BuffBuddy.UI:ToggleSmartBuffList()
+            BuffsPlease.UI:ToggleSmartBuffList()
         end
     end)
 
@@ -217,7 +218,7 @@ end
 -- ── Dropdown list ─────────────────────────────────────────────────────────────
 
 local function CreateListItem(index)
-    local item = CreateFrame("Button", "BuffBuddyListItem" .. index, smartBuffList, "SecureActionButtonTemplate")
+    local item = CreateFrame("Button", "BuffsPleaseListItem" .. index, smartBuffList, "SecureActionButtonTemplate")
     item:SetHeight(26)
     item:SetAttribute("type", "empty")
 
@@ -257,7 +258,7 @@ local function CreateListItem(index)
 end
 
 local function CreateSmartBuffList()
-    local list = CreateFrame("Frame", "BuffBuddySmartBuffList", UIParent, "BackdropTemplate")
+    local list = CreateFrame("Frame", "BuffsPleaseSmartBuffList", UIParent, "BackdropTemplate")
     list:SetWidth(FRAME_WIDTH)
     list:SetFrameStrata("HIGH")
     list:EnableMouse(true)
@@ -272,6 +273,96 @@ local function CreateSmartBuffList()
     return list
 end
 
+-- ── Minimap button ────────────────────────────────────────────────────────────
+
+local MINIMAP_RADIUS = 80
+
+local function SetMinimapButtonAngle(angle)
+    if not miniButton then return end
+    miniButton:ClearAllPoints()
+    miniButton:SetPoint("CENTER", Minimap, "CENTER",
+        math.cos(math.rad(angle)) * MINIMAP_RADIUS,
+        math.sin(math.rad(angle)) * MINIMAP_RADIUS)
+end
+
+local function CreateMiniButton()
+    local btn = CreateFrame("Button", "BuffsPleaseMinimapButton", Minimap)
+    btn:SetSize(28, 28)
+    btn:SetFrameStrata("MEDIUM")
+    btn:SetFrameLevel(8)
+    btn:EnableMouse(true)
+    btn:RegisterForDrag("LeftButton")
+
+    -- Circular dark background
+    local bg = btn:CreateTexture(nil, "BACKGROUND")
+    bg:SetTexture("Interface\\MiniMap\\MiniMap-TrackingBackground")
+    bg:SetSize(28, 28)
+    bg:SetPoint("CENTER")
+    btn.bg = bg
+
+    -- Icon centered inside the circle
+    local icon = btn:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(20, 20)
+    icon:SetPoint("CENTER")
+    icon:SetTexture("Interface\\AddOns\\BuffsPlease\\BuffsPlease.tga")
+    btn.icon = icon
+
+    -- Circular border ring (the standard minimap-button look used by most addons)
+    local border = btn:CreateTexture(nil, "OVERLAY")
+    border:SetTexture("Interface\\MiniMap\\MiniMap-TrackingBorder")
+    border:SetSize(56, 56)
+    border:SetPoint("TOPLEFT", btn, "TOPLEFT", -14, 14)
+    btn.border = border
+
+    -- Pending count badge (top-left)
+    local badge = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    badge:SetPoint("TOPLEFT", btn, "TOPLEFT", -2, 4)
+    badge:SetTextColor(1, 0.2, 0.2)
+    badge:SetShadowOffset(1, -1)
+    badge:SetShadowColor(0, 0, 0, 1)
+    badge:Hide()
+    btn.badge = badge
+
+    -- Drag around the minimap edge
+    btn:SetScript("OnDragStart", function(self)
+        self:LockHighlight()
+        self:SetScript("OnUpdate", function()
+            local mx, my = Minimap:GetCenter()
+            local px, py = GetCursorPosition()
+            local s = Minimap:GetEffectiveScale()
+            local angle = math.deg(math.atan2(py / s - my, px / s - mx))
+            SetMinimapButtonAngle(angle)
+            if BuffsPleaseDB then BuffsPleaseDB.minimapAngle = angle end
+        end)
+    end)
+    btn:SetScript("OnDragStop", function(self)
+        self:UnlockHighlight()
+        self:SetScript("OnUpdate", nil)
+    end)
+
+    btn:SetScript("OnClick", function()
+        BuffsPlease.UI:Toggle()
+    end)
+
+    btn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:AddLine("|cffffcc00BuffsPlease|r")
+        local n = self.pendingCount or 0
+        if n > 0 then
+            GameTooltip:AddLine(n .. " pending buff action" .. (n > 1 and "s" or ""), 1, 0.9, 0.5)
+        else
+            GameTooltip:AddLine("No pending buff actions", 0.6, 0.6, 0.6)
+        end
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Press |cffffcc00Shift+V|r to show/hide the window", 1, 1, 1)
+        GameTooltip:AddLine("|cffa0a0a0Left-click this button, or drag to reposition|r")
+        GameTooltip:Show()
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    return btn
+end
+
 -- ── Cast macro builder ───────────────────────────────────────────────────────
 
 -- Targets the player by name then casts the spell.  Avoids macro conditionals
@@ -282,25 +373,25 @@ end
 
 -- ── Click handlers ────────────────────────────────────────────────────────────
 
-function BuffBuddy.UI:HandleRequest(actionData)
+function BuffsPlease.UI:HandleRequest(actionData)
     local spellId    = actionData.buffDef.spellId
     local targetName = actionData.targetName
 
-    local template = (BuffBuddyDB and BuffBuddyDB.whisperText)
-        or "[BuffBuddy] Could you please buff me with %s?"
+    local template = (BuffsPleaseDB and BuffsPleaseDB.whisperText)
+        or "[BuffsPlease] Could you please buff me with %s?"
 
     local link = "[" .. actionData.buffDef.label .. "]"
 
     local msg = string.format(template, link)
     SendChatMessage(msg, "WHISPER", nil, targetName)
 
-    BuffBuddy.Core:SetRequestCooldown(targetName, spellId)
+    BuffsPlease.Core:SetRequestCooldown(targetName, spellId)
     self:Update()
 end
 
 
 
-function BuffBuddy.UI:ToggleSmartBuffList()
+function BuffsPlease.UI:ToggleSmartBuffList()
     if not smartBuffList then return end
     if smartBuffList:IsShown() then
         smartBuffList:Hide()
@@ -311,12 +402,28 @@ function BuffBuddy.UI:ToggleSmartBuffList()
     end
 end
 
+-- ── Mini button state ─────────────────────────────────────────────────────────
+
+function BuffsPlease.UI:UpdateMiniButton(count)
+    if not miniButton then return end
+    count = count or 0
+    miniButton.pendingCount = count
+    if count > 0 then
+        miniButton.badge:SetText(tostring(count))
+        miniButton.badge:Show()
+    else
+        miniButton.badge:Hide()
+    end
+end
+
 -- ── Update / render ───────────────────────────────────────────────────────────
 
-function BuffBuddy.UI:Update()
+function BuffsPlease.UI:Update()
+    local allActions  = BuffsPlease.Core:GetPendingActions()
+    self:UpdateMiniButton(#allActions)
+
     if not mainFrame or not mainFrame:IsShown() then return end
 
-    local allActions  = BuffBuddy.Core:GetPendingActions()
     local actions     = {}
     local castActions = {}
     for _, a in ipairs(allActions) do
@@ -327,7 +434,7 @@ function BuffBuddy.UI:Update()
         end
     end
 
-    local maxShow   = (BuffBuddyDB and BuffBuddyDB.maxButtons) or MAX_BUTTONS
+    local maxShow   = (BuffsPleaseDB and BuffsPleaseDB.maxButtons) or MAX_BUTTONS
     local showCount = math.min(#actions, maxShow)
 
     -- Frame height: fixed top section + optional rows area + bottom padding
@@ -406,7 +513,7 @@ function BuffBuddy.UI:Update()
         if not InCombatLockdown() then
             local lvl = UnitLevel(topAction.targetUnit)
             local targetLvl = (lvl and lvl > 0) and lvl or 60
-            local bestId = BuffBuddy.Core:GetBestKnownSpellId(topAction.buffDef, targetLvl)
+            local bestId = BuffsPlease.Core:GetBestKnownSpellId(topAction.buffDef, targetLvl)
             local sn = bestId and GetSpellInfo(bestId)
             if sn then
                 smartBuffButton:SetAttribute("type",      "macro")
@@ -450,7 +557,7 @@ function BuffBuddy.UI:Update()
             if not InCombatLockdown() then
                 local lvl = UnitLevel(action.targetUnit)
                 local targetLvl = (lvl and lvl > 0) and lvl or 60
-                local bestId = BuffBuddy.Core:GetBestKnownSpellId(action.buffDef, targetLvl)
+                local bestId = BuffsPlease.Core:GetBestKnownSpellId(action.buffDef, targetLvl)
                 local sn = bestId and GetSpellInfo(bestId)
                 if sn then
                     item:SetAttribute("type",      "macro")
@@ -477,7 +584,7 @@ end
 
 -- ── Public helpers ────────────────────────────────────────────────────────────
 
-function BuffBuddy.UI:Toggle()
+function BuffsPlease.UI:Toggle()
     if mainFrame:IsShown() then
         mainFrame:Hide()
     else
@@ -486,19 +593,23 @@ function BuffBuddy.UI:Toggle()
     end
 end
 
-function BuffBuddy.UI:ResetPosition()
+function BuffsPlease.UI:ResetPosition()
     mainFrame:ClearAllPoints()
     mainFrame:SetPoint("CENTER", UIParent, "CENTER", 300, 0)
-    if BuffBuddyDB then
-        BuffBuddyDB.framePos = { x = 300, y = 0 }
+    if BuffsPleaseDB then
+        BuffsPleaseDB.framePos = { x = 300, y = 0 }
+    end
+    if miniButton then
+        SetMinimapButtonAngle(225)
+        if BuffsPleaseDB then BuffsPleaseDB.minimapAngle = 225 end
     end
 end
 
-function BuffBuddy.UI:Initialize()
+function BuffsPlease.UI:Initialize()
     mainFrame = CreateMainFrame()
 
-    if BuffBuddyDB and BuffBuddyDB.framePos then
-        local pos = BuffBuddyDB.framePos
+    if BuffsPleaseDB and BuffsPleaseDB.framePos then
+        local pos = BuffsPleaseDB.framePos
         mainFrame:ClearAllPoints()
         mainFrame:SetPoint("CENTER", UIParent, "CENTER", pos.x, pos.y)
     else
@@ -513,6 +624,13 @@ function BuffBuddy.UI:Initialize()
     -- Dropdown anchors to the bottom of the main frame
     smartBuffList = CreateSmartBuffList()
 
-    mainFrame:Show()
+    -- Minimap button – always visible; click or Shift+V to open the main window
+    miniButton = CreateMiniButton()
+    SetMinimapButtonAngle((BuffsPleaseDB and BuffsPleaseDB.minimapAngle) or 225)
+
+    SetBindingClick("SHIFT-V", "BuffsPleaseMinimapButton")
+
+    -- Main frame starts hidden; the mini button or Shift+V reveals it
+    mainFrame:Hide()
     self:Update()
 end

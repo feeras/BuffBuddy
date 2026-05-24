@@ -1,4 +1,4 @@
-BuffBuddy = BuffBuddy or {}
+BuffsPlease = BuffsPlease or {}
 
 -- Buffs without `priority` are suggested independently.
 -- Buffs that share the same `class` AND carry a `priority` field compete per target:
@@ -6,7 +6,7 @@ BuffBuddy = BuffBuddy or {}
 --
 -- `ranks` lists every spell ID for the spell from highest rank to lowest.
 -- Core:GetBestKnownSpellId() walks this list to find the highest rank the player knows.
-BuffBuddy.BUFF_DEFINITIONS = {
+BuffsPlease.BUFF_DEFINITIONS = {
     {
         label       = "Power Word: Fortitude",
         spellId     = 21562,

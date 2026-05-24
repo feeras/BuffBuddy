@@ -1,4 +1,4 @@
-# BuffBuddy
+# BuffsPlease
 
 A lightweight World of Warcraft Classic Era addon that shows you which buffs are
 missing and lets you request or cast them with a single click — works for both
@@ -28,14 +28,14 @@ No external libraries are required — only native Blizzard Lua API.
 ## Installation
 
 1. Download or clone this repository.
-2. Copy the `BuffBuddy` folder into your addons directory:
+2. Copy the `BuffsPlease` folder into your addons directory:
 
    ```
-   World of Warcraft\_classic_era_\Interface\AddOns\BuffBuddy\
+   World of Warcraft\_classic_era_\Interface\AddOns\BuffsPlease\
    ```
 
 3. Launch the game (or `/reload` if already logged in).
-4. Enable **BuffBuddy** on the character-select AddOns screen.
+4. Enable **BuffsPlease** on the character-select AddOns screen.
 
 ---
 
@@ -43,9 +43,9 @@ No external libraries are required — only native Blizzard Lua API.
 
 | Command | Description |
 |---|---|
-| `/buffbuddy` or `/bb` | Toggle the BuffBuddy window |
-| `/buffbuddy reset` | Reset the window to its default position |
-| `/buffbuddy debug` | Print the full buff status of all group members to chat |
+| `/buffsplease` or `/bp` | Toggle the BuffsPlease window |
+| `/buffsplease reset` | Reset the window to its default position |
+| `/buffsplease debug` | Print the full buff status of all group members to chat |
 
 ---
 
@@ -54,7 +54,7 @@ No external libraries are required — only native Blizzard Lua API.
 ### Strangers require target or mouseover
 
 The Classic Era client API does not expose a list of all players in the vicinity.
-BuffBuddy detects strangers by checking your current **target** (`UnitBuff("target")`)
+BuffsPlease detects strangers by checking your current **target** (`UnitBuff("target")`)
 and **mouseover** unit (`UnitBuff("mouseover")`). A stranger's buffs are only visible
 while they are your active target or mouseover — the addon cannot scan players you
 are not interacting with.
@@ -64,7 +64,7 @@ can buff them or ask them for a buff.
 
 ### Cross-realm players
 
-`UnitName(unit)` returns `"Name-Realm"` for cross-realm group members. BuffBuddy
+`UnitName(unit)` returns `"Name-Realm"` for cross-realm group members. BuffsPlease
 uses this full string as the whisper target, which is required for the message
 to be delivered correctly.
 
@@ -79,7 +79,7 @@ resolves itself after a few seconds or on the first encounter with the spell.
 
 ## Adding custom buffs
 
-Edit `Buffs.lua` and append an entry to `BuffBuddy.BUFF_DEFINITIONS`:
+Edit `Buffs.lua` and append an entry to `BuffsPlease.BUFF_DEFINITIONS`:
 
 ```lua
 { label = "My Buff Name", spellId = 12345, class = "SHAMAN", maxDuration = 1800 },
@@ -95,7 +95,7 @@ Edit `Buffs.lua` and append an entry to `BuffBuddy.BUFF_DEFINITIONS`:
 
 ## Configuration (SavedVariables)
 
-`BuffBuddyDB` is saved per account in `WTF/Account/<name>/SavedVariables/BuffBuddy.lua`.
+`BuffsPleaseDB` is saved per account in `WTF/Account/<name>/SavedVariables/BuffsPlease.lua`.
 
 | Key | Default | Description |
 |---|---|---|
@@ -107,5 +107,5 @@ Edit `Buffs.lua` and append an entry to `BuffBuddy.BUFF_DEFINITIONS`:
 
 Default whisper template:
 ```
-[BuffBuddy] Could you please buff me with %s?
+[BuffsPlease] Could you please buff me with %s?
 ```

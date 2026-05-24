@@ -1,7 +1,7 @@
 ## Interface: 11403
-## Title: BuffBuddy
+## Title: BuffsPlease
 ## Notes: Shows buff request and buff grant buttons for group members
-## SavedVariables: BuffBuddyDB
+## SavedVariables: BuffsPleaseDB
 ## Version: 1.0.0
 
 Buffs.lua

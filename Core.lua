@@ -1,5 +1,5 @@
-BuffBuddy = BuffBuddy or {}
-BuffBuddy.Core = {}
+BuffsPlease = BuffsPlease or {}
+BuffsPlease.Core = {}
 
 -- [playerName .. tostring(spellId)] = GetTime() of last whisper
 local requestCooldowns  = {}
@@ -21,28 +21,28 @@ coreFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 
 coreFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
-        BuffBuddy.playerClass = select(2, UnitClass("player"))
-        BuffBuddy.Core:Initialize()
+        BuffsPlease.playerClass = select(2, UnitClass("player"))
+        BuffsPlease.Core:Initialize()
     else
-        BuffBuddy.Core:Refresh()
+        BuffsPlease.Core:Refresh()
     end
 end)
 
-function BuffBuddy.Core:Initialize()
+function BuffsPlease.Core:Initialize()
     C_Timer.NewTicker(5, function()
-        BuffBuddy.Core:Refresh()
+        BuffsPlease.Core:Refresh()
     end)
     self:Refresh()
 end
 
-function BuffBuddy.Core:Refresh()
-    if BuffBuddy.UI and BuffBuddy.UI.Update then
-        BuffBuddy.UI:Update()
+function BuffsPlease.Core:Refresh()
+    if BuffsPlease.UI and BuffsPlease.UI.Update then
+        BuffsPlease.UI:Update()
     end
 end
 
 -- Returns a flat list of unit IDs in the current group, always including "player".
-function BuffBuddy.Core:GetGroupUnits()
+function BuffsPlease.Core:GetGroupUnits()
     local units = { "player" }
 
     local inRaid  = IsInRaid  and IsInRaid()  or false
@@ -69,7 +69,7 @@ function BuffBuddy.Core:GetGroupUnits()
 end
 
 -- Returns non-group friendly player unit IDs that are nearby (target, mouseover, nameplates).
-function BuffBuddy.Core:GetNearbyUnits(groupUnits)
+function BuffsPlease.Core:GetNearbyUnits(groupUnits)
     local nearby = {}
 
     local function AddIfNew(unit)
@@ -100,7 +100,7 @@ end
 
 -- Returns hasBuff (bool), remainingSeconds (number), activeSpellId (number|nil), duration (number).
 -- duration is the total buff duration as reported by the server (0 when unknown/permanent).
-function BuffBuddy.Core:UnitHasBuff(unit, buffDef)
+function BuffsPlease.Core:UnitHasBuff(unit, buffDef)
     local targetTexture = GetSpellTexture(buffDef.spellId)
     if not targetTexture then
         return false, 0, nil, 0
@@ -236,12 +236,12 @@ end
 -- If targetLevel is nil, skips the level check and returns the highest known rank.
 -- strict=true: returns nil when no rank fits targetLevel (use for suggestion gating).
 -- strict=false/nil: falls back to the lowest known rank so the button always does something.
-function BuffBuddy.Core:GetBestKnownSpellId(buffDef, targetLevel, strict)
+function BuffsPlease.Core:GetBestKnownSpellId(buffDef, targetLevel, strict)
     if buffDef.ranks and IsSpellKnown then
         local lowestKnown = nil
         for i, id in ipairs(buffDef.ranks) do
             local known = IsSpellKnown(id)
-            if BuffBuddy.debugCast then
+            if BuffsPlease.debugCast then
                 local rl   = buffDef.rankLevels and buffDef.rankLevels[i] or "?"
                 local minT = buffDef.rankLevels and math.max(1, (buffDef.rankLevels[i] or 1) - 10) or "?"
                 print(string.format("|cffffcc00BB debug|r  rank[%d] id=%d known=%s rankLvl=%s minTarget=%s targetLevel=%s",
@@ -257,7 +257,7 @@ function BuffBuddy.Core:GetBestKnownSpellId(buffDef, targetLevel, strict)
             end
         end
         if lowestKnown and not strict then
-            if BuffBuddy.debugCast then
+            if BuffsPlease.debugCast then
                 print(string.format("|cffffcc00BB debug|r  fallback to lowestKnown=%d", lowestKnown))
             end
             return lowestKnown
@@ -267,22 +267,22 @@ function BuffBuddy.Core:GetBestKnownSpellId(buffDef, targetLevel, strict)
     return buffDef.spellId
 end
 
-function BuffBuddy.Core:IsBuffEnabled(spellId)
-    if BuffBuddyDB and BuffBuddyDB.enabledBuffs then
-        if BuffBuddyDB.enabledBuffs[spellId] == false then
+function BuffsPlease.Core:IsBuffEnabled(spellId)
+    if BuffsPleaseDB and BuffsPleaseDB.enabledBuffs then
+        if BuffsPleaseDB.enabledBuffs[spellId] == false then
             return false
         end
     end
     return true
 end
 
-function BuffBuddy.Core:IsRequestOnCooldown(targetName, spellId)
+function BuffsPlease.Core:IsRequestOnCooldown(targetName, spellId)
     local key = (targetName or "") .. tostring(spellId)
     local last = requestCooldowns[key]
     return last and (GetTime() - last) < REQUEST_COOLDOWN
 end
 
-function BuffBuddy.Core:SetRequestCooldown(targetName, spellId)
+function BuffsPlease.Core:SetRequestCooldown(targetName, spellId)
     local key = (targetName or "") .. tostring(spellId)
     requestCooldowns[key] = GetTime()
 end
@@ -291,21 +291,21 @@ end
 -- Each entry: { type, buffDef, targetUnit, targetName, remainingDuration }
 --   type = "request"  → local player needs this buff from targetName
 --   type = "cast"     → local player can give this buff to targetUnit/targetName
-function BuffBuddy.Core:GetPendingActions()
+function BuffsPlease.Core:GetPendingActions()
     local actions        = {}
     local requestedBuffs = {}   -- tracks spellIds already covered by a "request" entry
     local units          = self:GetGroupUnits()
 
     local playerLevel    = UnitLevel("player") or 0
 
-    if BuffBuddy.debugSmart then
+    if BuffsPlease.debugSmart then
         local names = {}
         for _, u in ipairs(units) do names[#names+1] = (UnitName(u) or u) end
         print(string.format("|cff00ccffBBsmart|r scan: group=[%s] playerClass=%s",
-            table.concat(names, ","), BuffBuddy.playerClass or "?"))
+            table.concat(names, ","), BuffsPlease.playerClass or "?"))
     end
-    local minLevelDiff   = (BuffBuddyDB and BuffBuddyDB.minLevelDiff ~= nil)
-                           and BuffBuddyDB.minLevelDiff or 10
+    local minLevelDiff   = (BuffsPleaseDB and BuffsPleaseDB.minLevelDiff ~= nil)
+                           and BuffsPleaseDB.minLevelDiff or 10
 
     -- Pre-cache each unit's class so we don't call UnitClass repeatedly.
     local unitClass = {}
@@ -315,12 +315,12 @@ function BuffBuddy.Core:GetPendingActions()
         end
     end
 
-    for _, buffDef in ipairs(BuffBuddy.BUFF_DEFINITIONS) do
+    for _, buffDef in ipairs(BuffsPlease.BUFF_DEFINITIONS) do
         if self:IsBuffEnabled(buffDef.spellId) then
 
             -- 1. Does the local player need this buff?
             local playerHas, playerRemaining, playerActiveId, playerDuration = self:UnitHasBuff("player", buffDef)
-            if BuffAppliesToClass(buffDef, BuffBuddy.playerClass) then
+            if BuffAppliesToClass(buffDef, BuffsPlease.playerClass) then
                 -- Find the first available group member who can provide it.
                 for _, unit in ipairs(units) do
                     local provLvl = UnitLevel(unit)
@@ -353,7 +353,7 @@ function BuffBuddy.Core:GetPendingActions()
             end
 
             -- 2. Can the local player cast this buff for others?
-            if BuffBuddy.playerClass == buffDef.class then
+            if BuffsPlease.playerClass == buffDef.class then
                 local playerBestId = self:GetBestKnownSpellId(buffDef)  -- any rank: "do I know this spell?"
                 if playerBestId then
                     for _, unit in ipairs(units) do
@@ -362,7 +362,7 @@ function BuffBuddy.Core:GetPendingActions()
                             local targetLvl = (lvl and lvl > 0) and lvl or 60
                             local usableId = self:GetBestKnownSpellId(buffDef, targetLvl, true)
                             local unitHas, unitRemaining, unitActiveId, unitDuration = self:UnitHasBuff(unit, buffDef)
-                            local sameClass = (unitClass[unit] == BuffBuddy.playerClass)
+                            local sameClass = (unitClass[unit] == BuffsPlease.playerClass)
                             local willCast =
                                 usableId
                                 and (NeedsBuff(unitHas, unitRemaining, unitDuration, buffDef)
@@ -370,7 +370,7 @@ function BuffBuddy.Core:GetPendingActions()
                                 and BuffAppliesToClass(buffDef, unitClass[unit])
                                 and (not buffDef.priority or PlayerKnowsBuff(buffDef))
                                 and (not sameClass or (playerLevel - targetLvl) > 10)
-                            if BuffBuddy.debugSmart then
+                            if BuffsPlease.debugSmart then
                                 local why
                                 if not usableId then
                                     why = "no-rank(tgt=" .. targetLvl .. ")"
@@ -410,7 +410,7 @@ function BuffBuddy.Core:GetPendingActions()
 
     -- Also scan any non-group players currently targeted or moused over.
     local nearbyUnits = self:GetNearbyUnits(units)
-    if BuffBuddy.debugSmart then
+    if BuffsPlease.debugSmart then
         if #nearbyUnits > 0 then
             local names = {}
             for _, u in ipairs(nearbyUnits) do
@@ -425,7 +425,7 @@ function BuffBuddy.Core:GetPendingActions()
         local _, strangerClass = UnitClass(unit)
         local strangerName = UnitName(unit)
 
-        for _, buffDef in ipairs(BuffBuddy.BUFF_DEFINITIONS) do
+        for _, buffDef in ipairs(BuffsPlease.BUFF_DEFINITIONS) do
             if self:IsBuffEnabled(buffDef.spellId) then
 
                 -- Can this stranger provide a buff I need?
@@ -439,7 +439,7 @@ function BuffBuddy.Core:GetPendingActions()
                     local wantBuff = NeedsBuff(playerHas, playerRemaining, playerDuration, buffDef)
                                   or ProviderCanUpgrade(buffDef, playerActiveId, sLvl)
                     if wantBuff
-                    and BuffAppliesToClass(buffDef, BuffBuddy.playerClass)
+                    and BuffAppliesToClass(buffDef, BuffsPlease.playerClass)
                     and not self:IsRequestOnCooldown(strangerName, buffDef.spellId) then
                         table.insert(actions, {
                             type             = "request",
@@ -455,14 +455,14 @@ function BuffBuddy.Core:GetPendingActions()
                 end
 
                 -- Can I provide a buff this stranger needs?
-                if BuffBuddy.playerClass == buffDef.class then
+                if BuffsPlease.playerClass == buffDef.class then
                     local playerBestId = self:GetBestKnownSpellId(buffDef)  -- any rank: "do I know this spell?"
                     if playerBestId then
                         local lvl = UnitLevel(unit)
                         local targetLvl = (lvl and lvl > 0) and lvl or 60
                         local usableId = self:GetBestKnownSpellId(buffDef, targetLvl, true)
                         local unitHas, unitRemaining, unitActiveId, unitDuration = self:UnitHasBuff(unit, buffDef)
-                        local sameClass = (strangerClass == BuffBuddy.playerClass)
+                        local sameClass = (strangerClass == BuffsPlease.playerClass)
                         if usableId
                         and (NeedsBuff(unitHas, unitRemaining, unitDuration, buffDef)
                             or HasHigherRank(buffDef, playerBestId, unitActiveId))
